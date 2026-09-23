@@ -1,0 +1,5 @@
+# Installed at image build time, never during an agent task.
+plotly==6.9.0
+lxml==6.1.3
+sympy==1.14.0
+polars==1.39.3

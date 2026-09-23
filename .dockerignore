@@ -1,0 +1,15 @@
+.env*
+.github_token
+.pytest_cache
+__pycache__
+*.pyc
+tests
+uv.lock
+artifacts
+docs
+.git
+.*key*
+.*credentials*
+.*session*
+scripts
+smoke-output
