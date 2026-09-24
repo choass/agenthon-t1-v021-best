@@ -13,3 +13,6 @@ docs
 .*session*
 scripts
 smoke-output
+
+.tools
+.venv

@@ -145,6 +145,8 @@ def run_agent(
             "content": f"Task:\n{instruction}\n\nInput file inventory (relative to /input):\n{list_files(staged)}\n\nRead supplied data at /input/environment/data or /app/data. The relative path environment/data works from /workspace; /app/environment/data is also an alias. Use these known paths rather than searching the filesystem.\nTime limit: {limit:g} seconds. Execute the solution and create every deliverable.",
         },
     ]
+    if mode == "container":
+        messages[1]["content"] = translate(messages[1]["content"])
     task_message = messages[1]
     messages.append(
         {"role": "user", "content": ""}
@@ -270,6 +272,8 @@ def run_agent(
                 requests_used=model.usage.calls,
                 request_cap=config.request_budget,
             )
+            if mode == "container":
+                messages[2]["content"] = translate(messages[2]["content"])
             # The client bounds each attempt; retries retain access to the remaining task time.
             message = model.complete(messages, deadline)
             message["role"] = "assistant"

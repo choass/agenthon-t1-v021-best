@@ -9,3 +9,5 @@ The image accepts `solve --task-dir /input --out /app/output`. Inputs are read i
 The original v0.2.1 image and default source branch remain available. This branch publishes `v034-contract` and `v034-contract-sha-<commit>` tags to the existing public GHCR package. Submissions pin the resulting immutable digest, never a moving tag.
 
 CI checks the real image under non-root/read-only/noexec 64 MiB tmpfs, process and file-descriptor limits, and a 64 MiB per-file limit. The synthetic test uses 2 CPUs/4 GiB on GitHub's runner; this is a startup/protocol/resource-compatibility smoke test, not a reproduction of official 16 CPU/128 GiB task performance or accuracy.
+
+Deployment-only delta: translate task inventory and pinned memory paths in container mode from the local `/workspace` alias to the real `/tmp/.../workspace`. The local execution branch and solving strategy remain unchanged. Container smoke reads/edits source through the paths returned in memory.

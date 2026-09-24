@@ -56,6 +56,12 @@ class Handler(BaseHTTPRequestHandler):
             index = len(requests_seen)
             requests_seen.append(data)
             name, args = actions[index]
+            state = json.loads(data['messages'][2]['content'].split('\n', 1)[1])
+            files = state.get('execution_memory', {}).get('files', [])
+            assert all(not f['path'].startswith('/workspace/') for f in files), files
+            if name in {'read_file', 'edit_file'}:
+                path = next(f['path'] for f in files if f['path'].endswith('/solve.py'))
+                args = {**args, 'path': path}
             message = {'role': 'assistant', 'content': '', 'tool_calls': [
                 {'id': f'call_{index}', 'type': 'function',
                  'function': {'name': name, 'arguments': json.dumps(args)}}]}
