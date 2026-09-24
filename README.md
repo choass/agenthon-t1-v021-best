@@ -1,25 +1,11 @@
-# Agenthon T1 — v0.2.1 official submission adaptation
+# Agenthon T1 v0.3.4 — current request contract
 
-Team uranus (516). This repository contains the independently implemented T1 harness based on our frozen v0.2.1 source, adapted to the current House request contract.
+Participant image from the immutable v0.3.4-contract20260923 solver snapshot. Local public evaluation with GLM-5.2 (non-thinking) passed 43/87 tasks (49.43%), after repairing the **external scoring adapter**; solver outputs and source were unchanged. This is not an official House-model score.
 
-The historical v0.2.1 local GLM-5.2 evaluation scored 52/87 (59.77%) under the former token budget. This is **not** a score for this adapted image or the official House model. Official evaluation results are pending.
+Every task has at most 25 model transport attempts, including retries, at most 4000 output tokens per attempt, and its card deadline. Cumulative tokens are diagnostics only. Competition calls use injected MODEL_ENDPOINT, MODEL_NAME and MODEL_TOKEN, with the audited proxy environment preserved, `/v1/chat/completions`, bearer authentication and thinking disabled.
 
-## Runtime
+The image accepts `solve --task-dir /input --out /app/output`. Inputs are read in place; scratch goes under /tmp; only deliverables go into /app/output. Dependencies are installed at build time. No model weights, credentials, task datasets, reference answers or evaluation artifacts are packaged.
 
-Entrypoint: `python -m t1_agent solve --task-dir /input --out /app/output`.
+The original v0.2.1 image and default source branch remain available. This branch publishes `v034-contract` and `v034-contract-sha-<commit>` tags to the existing public GHCR package. Submissions pin the resulting immutable digest, never a moving tag.
 
-The runner injects `MODEL_ENDPOINT`, `MODEL_NAME`, and `MODEL_TOKEN`. Model requests use the OpenAI-compatible chat completions protocol. Each task permits at most 25 HTTP attempts, counting retries conservatively, with `max_tokens` capped at 4000 per attempt. Cumulative input/output tokens are diagnostics, not admission limits. Thinking is disabled. Each card's agent timeout bounds solving and local checks.
-
-Tools: checkpoint, bash, verify, finish. The workflow builds and executes a solution, then starts a fresh review context. Contracts and compact progress survive context trimming. Local verification checks deliverables and hashes; it is not a correctness label from the official grader.
-
-The container reads the participant input tree in place (no dataset copy into the 64 MiB tmpfs). Paths specified by task Docker COPY instructions are translated to participant-visible input paths. Scratch and logs live under `/tmp`; only requested deliverables go to `/app/output`. No official answers, grading checks, task datasets, model weights, or credentials are included. Dependencies are installed during build. There is no runtime dependency download.
-
-## Build and verification
-
-`docker build -t agenthon-t1:ci .`
-
-The manually triggered GitHub Actions workflow builds linux/amd64, tests request accounting, and performs an offline mock-model smoke test under nonroot/read-only/noexec-tmpfs restrictions before publishing the **tested image** to GHCR. The smoke verifies the HTTP protocol, native tool history, execution, review, and output aliases; it does not measure financial correctness.
-
-## License
-
-MIT. The harness is an independent implementation; it uses external Python packages under their respective licenses.
+CI checks the real image under non-root/read-only/noexec 64 MiB tmpfs, process and file-descriptor limits, and a 64 MiB per-file limit. The synthetic test uses 2 CPUs/4 GiB on GitHub's runner; this is a startup/protocol/resource-compatibility smoke test, not a reproduction of official 16 CPU/128 GiB task performance or accuracy.

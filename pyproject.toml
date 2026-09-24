@@ -1,6 +1,6 @@
 [project]
 name = "agenthon-t1-harness"
-version = "0.2.1"
+version = "0.3.4"
 description = "Agenthon T1 coding agent with isolated execution and independent public evaluation"
 requires-python = ">=3.13,<3.14"
 dependencies = [
@@ -20,6 +20,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["t1_agent*"]
+
+[tool.setuptools.package-data]
+t1_agent = ["guides/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -24,6 +24,9 @@ class Sandbox:
         python: Path | None = None,
         extra_read: list[Path] | None = None,
         extra_binds: list[tuple[Path, str]] | None = None,
+        extra_writable_binds: list[tuple[Path, str]] | None = None,
+        allow_metadata_syscalls: bool = False,
+        mount_task_data: bool = True,
     ):
         self.task, self.output, self.work = (
             task.resolve(),
@@ -34,7 +37,10 @@ class Sandbox:
         self.python = Path(os.path.abspath(python or sys.executable))
         self.extra_read = extra_read or []
         self.extra_binds = extra_binds or []
-        for source, destination in self.extra_binds:
+        self.extra_writable_binds = extra_writable_binds or []
+        self.allow_metadata_syscalls = allow_metadata_syscalls
+        self.mount_task_data = mount_task_data
+        for source, destination in self.extra_binds + self.extra_writable_binds:
             if (
                 not source.exists()
                 or not Path(destination).is_absolute()
@@ -185,10 +191,13 @@ class Sandbox:
                 command,
             ]
             data = self.task / "environment/data"
-            if data.is_dir():
+            if self.mount_task_data and data.is_dir():
                 (rootfs / "app/data").mkdir(parents=True, exist_ok=True)
                 (rootfs / "data").mkdir(parents=True, exist_ok=True)
                 argv[3:3] = ["-b", f"{data}:/app/data", "-b", f"{data}:/data"]
+                # The task's relative environment/data paths also work from /app.
+                (rootfs / "app/environment").mkdir(parents=True, exist_ok=True)
+                argv[3:3] = ["-b", f"{self.task / 'environment'}:/app/environment"]
             # Trusted grader-only mappings reproduce official input and check paths.
             # The solver never supplies these bindings or receives reference data.
             for source, destination in self.extra_binds:
@@ -199,11 +208,19 @@ class Sandbox:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.touch(exist_ok=True)
                 argv[3:3] = ["-b", f"{source.resolve()}:{destination}"]
+            for source, destination in self.extra_writable_binds:
+                target = rootfs / destination.lstrip("/")
+                target.mkdir(parents=True, exist_ok=True)
+                argv[3:3] = ["-b", f"{source.resolve()}:{destination}"]
             spec = {
                 "argv": argv,
                 "env": env,
                 "read_paths": [str(p.resolve()) for p in readonly] + ["/dev/urandom"],
-                "write_paths": [str(self.output), str(self.work), "/dev/null"],
+                "write_paths": [
+                    str(self.output), str(self.work), "/dev/null",
+                    *[str(source.resolve()) for source, _ in self.extra_writable_binds],
+                ],
+                "allow_metadata_syscalls": self.allow_metadata_syscalls,
             }
             # This control file lives outside the child-visible workspace.
             fd, filename = tempfile.mkstemp(prefix="t1-launch-", suffix=".json")

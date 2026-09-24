@@ -14,17 +14,23 @@ from .preparation import prepare_polars
 from .sandbox import ROOT, Sandbox
 from .task import input_mounts
 
-OFFICIAL = ROOT.parent / "official_baselines"
-DEFAULT_UNITS = OFFICIAL / "official/track1-coding-public/units"
+OFFICIAL = (ROOT.parent.parent / "official_baselines").resolve()
+DEFAULT_UNITS = OFFICIAL / "official/track1-coding-20260922/units"
 
 
 def grading_mounts(task: Path) -> list[tuple[Path, str]]:
-    """Reproduce trusted official check paths and simple Docker COPY mappings."""
+    """Return only task input mounts.
+
+    The current official scorer temporarily presents ``checks/reference_data``
+    at ``/tests/reference_data`` itself. Mounting the complete checks directory
+    at ``/tests`` beforehand makes that path non-absent and is classified as an
+    organizer fault, so checks remain under ``/input/checks`` only.
+    """
     task = task.resolve()
-    mounts = []
-    if (task / "checks").is_dir():
-        mounts.append((task / "checks", "/tests"))
-    return mounts + input_mounts(task)
+    # The scorer itself presents Dockerfile/card inputs at their declared
+    # destinations. Pre-mounting task data would make those destinations look
+    # occupied and is rejected as an organizer fault by the current scorer.
+    return []
 
 
 def pytest_infrastructure_error(report: dict, returncode: int | None) -> str | None:
@@ -54,6 +60,29 @@ def pytest_infrastructure_error(report: dict, returncode: int | None) -> str | N
     ):
         return "pytest_collection_or_runtime_error"
     return None
+
+
+def classify_verdict(verdict: dict) -> tuple[str, str | None]:
+    """Turn the trusted verifier result into an explicit, non-ambiguous label."""
+    error = verdict.get("grader_error")
+    if error:
+        if error == "timeout":
+            return "unverified", "checker_timeout"
+        if error in {"runtime_failure", "pytest_collection_or_runtime_error"}:
+            return "unverified", "checker_runtime"
+        if error.startswith("pytest_"):
+            return "unverified", "checker_schema_error"
+        return "unverified", "checker_runtime"
+    if verdict.get("admissible") is True:
+        return "passed", None
+    gates = verdict.get("gate_results") or {}
+    if gates.get("g1_schema", {}).get("passed") is False:
+        return "failed", "schema_invalid"
+    if gates.get("g3_domain_semantics", {}).get("passed") is False:
+        return "failed", "assertion_failed"
+    if (verdict.get("canary_scan") or {}).get("canary_verdict") == "hit":
+        return "failed", "contamination"
+    return "failed", "verifier_rejected"
 
 
 def grade(
@@ -95,9 +124,11 @@ def grade(
         log_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(preparation["log"], log_dir / "test_gen.log")
     # This is an adapter around the official factory, not a replacement scoring implementation.
-    script = """import json, os, tomllib
+    script = """import json, os, sys, tomllib
 from dataclasses import asdict
 from pathlib import Path
+sys.path.insert(0, "/volume/pt-coder/users/cjie/Competition/Agenthon_2026/official_baselines/official/track1-coding-20260922")
+sys.path.insert(0, "/volume/pt-coder/users/cjie/Competition/Agenthon_2026/official_baselines/official/Agenthon2026-toolkit-20260922/common")
 from qfbench2_track_coding.scoring import build_verifier
 from qfbench2_common.leakage import scan_tree
 from qfbench2_common.failure_labels import FailureLabel
@@ -127,12 +158,34 @@ except Exception as exc:
 """.replace("ELAPSED", repr(elapsed))
     (work / "grade.py").write_text(script)
     extra = [
-        OFFICIAL / "official/track1-coding-public",
-        OFFICIAL / "official/Agenthon2026-toolkit-v2.3.1/common",
+        OFFICIAL / "official/track1-coding-20260922",
+        OFFICIAL / "official/Agenthon2026-toolkit-20260922/common",
     ]
     mounts = grading_mounts(task)
+    # The current scorer creates /tests/reference_data temporarily. Give it an
+    # empty writable parent; mounting the unit's checks directory here would
+    # collide with that presentation and is an organizer fault.
+    tests_root = work / "tests-root"
+    data_root = work / "data-root"
+    raw_data_root = work / "raw-data-root"
+    tests_root.mkdir(parents=True, exist_ok=True)
+    data_root.mkdir(parents=True, exist_ok=True)
+    raw_data_root.mkdir(parents=True, exist_ok=True)
+    mounts = mounts
     runner = Sandbox(
-        task, output, work, python=python, extra_read=extra, extra_binds=mounts
+        task,
+        output,
+        work,
+        python=python,
+        extra_read=extra,
+        extra_binds=mounts,
+        extra_writable_binds=[
+            (tests_root, "/tests"),
+            (data_root, "/app/data"),
+            (raw_data_root, "/data"),
+        ],
+        allow_metadata_syscalls=True,
+        mount_task_data=False,
     )
     remaining = max(0.1, verifier_limit - (time.monotonic() - started))
     result = runner.run(
@@ -196,6 +249,7 @@ def evaluate(
             verdict = grade(
                 task, path / "output", path, agent["elapsed_sec"], scorer_python
             )
+            verification_state, failure_kind = classify_verdict(verdict)
             solved = (
                 agent.get("exit_code", int(agent["status"] != "completed")) == 0
                 and verdict.get("admissible") is True
@@ -205,6 +259,8 @@ def evaluate(
                 "solved": solved,
                 "agent": agent,
                 "verdict": verdict,
+                "verification_state": verification_state,
+                "failure_kind": failure_kind,
             }
         except Exception as exc:  # noqa: BLE001 - preserve the roster and mark infrastructure failures explicitly
             result = {

@@ -14,7 +14,10 @@ from t1_agent.isolation import restrict
 def main() -> None:
     spec = json.loads(Path(sys.argv[1]).read_text())
     # Limit runaway output and recursion. Memory/CPU quotas are ultimately container-owned.
-    resource.setrlimit(resource.RLIMIT_FSIZE, (512 * 1024 * 1024,) * 2)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024 * 1024,) * 2)
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    cap = min(1024, hard) if hard != resource.RLIM_INFINITY else 1024
+    resource.setrlimit(resource.RLIMIT_NOFILE, (cap, cap))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     restrict(spec["read_paths"], spec["write_paths"])
     os.execve(spec["argv"][0], spec["argv"], spec["env"])

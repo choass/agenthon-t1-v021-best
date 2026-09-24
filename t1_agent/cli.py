@@ -23,15 +23,15 @@ def main(argv=None) -> int:
         p = commands.add_parser(verb)
         p.add_argument("--env-file", type=Path)
         p.add_argument("--max-steps", type=int, default=Config.max_steps)
-        p.add_argument("--response-tokens", type=int, default=4000)
+        p.add_argument("--response-tokens", type=int, default=Config.response_tokens)
         p.add_argument(
             "--thinking", choices=["auto", "enabled", "disabled"], default="disabled"
         )
         p.add_argument("--request-timeout", type=float, default=600)
         p.add_argument("--request-retries", type=int, default=2)
         p.add_argument("--streaming", choices=["auto", "on", "off"], default="auto")
-        p.add_argument("--context-bytes", type=int, default=36000)
-        p.add_argument("--feedback-chars", type=int, default=4000)
+        p.add_argument("--context-bytes", type=int, default=Config.context_bytes)
+        p.add_argument("--feedback-chars", type=int, default=Config.feedback_chars)
         p.add_argument("--command-timeout", type=float, default=300)
         p.add_argument("--request-budget", type=int, default=25)
         p.add_argument("--timeout", type=float)
@@ -99,7 +99,6 @@ def main(argv=None) -> int:
             max_steps=args.max_steps,
             response_tokens=args.response_tokens,
             request_budget=args.request_budget,
-            max_output_tokens=4000,
             request_timeout=args.request_timeout,
             request_retries=args.request_retries,
             streaming=args.streaming,

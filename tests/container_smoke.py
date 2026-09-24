@@ -21,10 +21,19 @@ import json
 from pathlib import Path
 assert json.loads(Path('/app/output/results.json').read_text())['answer'] == 14
 PYCODE"""
+source = """import json, os
+from pathlib import Path
+assert not os.environ.get('MODEL_TOKEN')
+value = json.loads(Path('/input/environment/data/value.json').read_text())['value']
+Path('/app/output/results.json').write_text(json.dumps({'answer': value * 1}))
+"""
 actions = [
     ('checkpoint', {'outputs': ['results.json'], 'checks': ['answer is double input'],
                     'conventions': 'integer arithmetic', 'progress': 'ready'}),
-    ('bash', {'command': write}),
+    ('write_file', {'path': 'solve.py', 'content': source}),
+    ('read_file', {'path': 'solve.py'}),
+    ('edit_file', {'path': 'solve.py', 'old': 'value * 1', 'new': 'value * 2'}),
+    ('bash', {'command': 'python solve.py'}),
     ('verify', {'command': check, 'coverage': 'recompute answer from input'}),
     ('finish', {'summary': 'ready for independent review'}),
     ('verify', {'command': check, 'coverage': 'independent answer check'}),
@@ -74,8 +83,8 @@ assert not errors, errors
 assert run.returncode == 0, (run.stdout, run.stderr)
 report = json.loads(run.stdout)
 assert report['status'] == 'completed', report
-assert report['usage']['calls'] == 6, report['usage']
+assert report['usage']['calls'] == 9, report['usage']
 assert not Path('/tmp/smoke-artifacts/input').exists(), 'Input must not be copied to tmpfs'
 assert json.loads(Path('/app/output/results.json').read_text()) == {'answer': 14}
 assert Path('/output/results.json').read_bytes() == Path('/app/output/results.json').read_bytes()
-print('Container smoke passed: nonroot, readonly, offline, 64MiB tmpfs, six House calls, tools, review, output aliases.')
+print('Container smoke passed: nonroot, readonly, offline, 64MiB tmpfs, nine House calls with read/write/edit, tools, review, output aliases.')

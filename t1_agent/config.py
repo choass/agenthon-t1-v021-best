@@ -30,12 +30,18 @@ class Config:
     api_key: str = field(default="", repr=False)
     official: bool = False
     thinking: str = "disabled"
-    max_steps: int = 250
+    # T1 ruling 22 (2026-09-21): budget is admitted requests, not cumulative
+    # input/output tokens.  Keep token usage for diagnostics only.
+    max_steps: int = 25
     request_budget: int = 25
-    max_output_tokens: int = 4000
-    response_tokens: int = 4000
-    context_bytes: int = 36_000
-    feedback_chars: int = 4000
+    # Retained as a diagnostic-only compatibility field.  The current T1
+    # contract has no cumulative input-token allowance.
+    max_input_tokens: int = 0
+    # Compatibility alias for the per-request output cap.
+    max_output_tokens: int = 4_000
+    response_tokens: int = 4_000
+    context_bytes: int = 96_000
+    feedback_chars: int = 12_000
     command_timeout: float = 300
     request_timeout: float = 600
     request_retries: int = 2
@@ -64,9 +70,13 @@ class Config:
             if not math.isfinite(getattr(cfg, name)) or getattr(cfg, name) <= 0:
                 raise ValueError(f"{name} must be positive")
         if cfg.request_budget > 25:
-            raise ValueError("request_budget cannot exceed 25 admitted requests")
-        if cfg.max_output_tokens > 4000 or cfg.response_tokens > 4000:
-            raise ValueError("output tokens cannot exceed 4000 per request")
+            raise ValueError("request_budget cannot exceed the official T1 cap of 25")
+        if cfg.max_steps > cfg.request_budget:
+            raise ValueError("max_steps cannot exceed the admitted request budget")
+        if cfg.max_output_tokens > 4_000 or cfg.response_tokens > 4_000:
+            raise ValueError("per-request output cannot exceed the official T1 cap of 4000")
+        if cfg.max_input_tokens < 0:
+            raise ValueError("max_input_tokens is diagnostic-only and cannot be negative")
 
     @classmethod
     def from_env(cls, env_file: Path | None = None, **kwargs) -> Config:

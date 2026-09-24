@@ -77,6 +77,8 @@ def inspect_outputs(root: Path, required: list[str]) -> dict:
             except (ValueError, UnicodeError):
                 # CSV dialects and encodings differ; task-specific checks handle them.
                 pass
+    if sum(v["bytes"] for v in files.values()) > 64 * 1024 * 1024:
+        errors.append("Output tree exceeds official 64 MiB acceptance limit")
     missing = [
         pat for pat in required if not any(fnmatch.fnmatchcase(f, pat) for f in files)
     ]
@@ -94,6 +96,7 @@ class Workflow:
     review_reason: str | None = None
     transitions: list[dict] = field(default_factory=list)
     latest_feedback: str = ""
+    execution_memory: dict = field(default_factory=dict)
 
     def checkpoint(self, args: dict) -> dict:
         outputs = args.get("outputs")
@@ -202,9 +205,11 @@ class Workflow:
         requests_used: int = 0,
         request_cap: int = 25,
     ) -> dict:
-        # Input token totals are diagnostic under the current House contract;
-        # the hard admission control is performed by the client request count.
-        consumed = max(elapsed / limit, steps / max_steps, requests_used / request_cap)
+        consumed = max(
+            elapsed / limit,
+            requests_used / request_cap,
+            steps / max_steps,
+        )
         directive = "Implement the full solution and execute it. Register/update checkpoint; keep source and self-tests on disk."
         if not self.outputs:
             directive = "Read the instruction, then register ALL required outputs, exact conventions and independent checks with checkpoint now."
@@ -224,8 +229,8 @@ class Workflow:
                 "steps": max_steps - steps,
                 "requests": max(0, request_cap - requests_used),
             },
-            "per_request_output_cap": output_cap,
             "token_usage_diagnostic_only": {"input": input_used, "output": output_used},
+            "per_request_output_cap": output_cap,
             "contract": {
                 "outputs": self.outputs,
                 "conventions": self.conventions,
@@ -235,7 +240,8 @@ class Workflow:
             "verification_passed": bool(
                 self.verification and self.verification["passed"]
             ),
-            "last_feedback": self.latest_feedback[-1800:],
+            "last_feedback": self.latest_feedback[-600:],
+            "execution_memory": self.execution_memory,
         }
         return {
             "role": "user",

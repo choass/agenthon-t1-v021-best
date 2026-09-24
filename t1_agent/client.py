@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .config import Config
 from .context import encoded_size, trim_history
+from .file_tools import definitions
 from .transport import exchange
 
 
@@ -90,6 +91,7 @@ TOOLS = [
         },
     },
 ]
+TOOLS += definitions()
 
 
 class ChatClient:
@@ -104,6 +106,8 @@ class ChatClient:
         self.retries = 0
         self.events = []
         self.on_event = None
+        self.tool_choice = "auto"
+        self.execute_after_truncated_thinking = False
 
     def _event(self, kind, **fields):
         event = {"kind": kind, **fields}
@@ -113,6 +117,14 @@ class ChatClient:
 
     def _exchange(self, spec, timeout):
         return exchange(spec, timeout)
+
+    def offered_tools(self):
+        if isinstance(self.tool_choice, dict):
+            name = self.tool_choice.get("function", {}).get("name")
+            selected = [t for t in TOOLS if t["function"]["name"] == name]
+            if selected:
+                return selected
+        return TOOLS
 
     def reservation(self, messages):
         return encoded_size({"messages": messages, "tools": TOOLS}) + 2048
@@ -134,6 +146,7 @@ class ChatClient:
             )
         return self.reservation(messages)
 
+
     def _charge(self, data, reservation, allowance):
         usage = data.get("usage") or {}
         known = all(
@@ -143,8 +156,7 @@ class ChatClient:
         self.usage.input_tokens += usage["prompt_tokens"] if known else reservation
         self.usage.output_tokens += usage["completion_tokens"] if known else allowance
         self.usage.estimated_calls += int(not known)
-        # Cumulative input/output totals are diagnostics. Admission is enforced
-        # by request count and the per-request max_tokens value.
+
 
     def complete(self, messages: list[dict], deadline: float) -> dict:
         cfg = self.config
@@ -161,8 +173,8 @@ class ChatClient:
             payload = {
                 "model": cfg.model,
                 "messages": messages,
-                "tools": TOOLS,
-                "tool_choice": "auto",
+                "tools": self.offered_tools(),
+                "tool_choice": getattr(self, "tool_choice", "auto"),
                 "temperature": cfg.temperature,
                 "seed": cfg.seed,
                 "max_tokens": allowance,
@@ -173,9 +185,9 @@ class ChatClient:
             thinking = cfg.thinking
             if thinking == "auto" and cfg.model.lower().startswith("glm-5.2"):
                 thinking = "disabled"
-            if not cfg.official and thinking in {"enabled", "disabled"}:
+            if not (cfg.official or "nemotron" in cfg.model.lower()) and thinking in {"enabled", "disabled"}:
                 payload["thinking"] = {"type": thinking}
-            elif cfg.official:
+            elif cfg.official or "nemotron" in cfg.model.lower():
                 payload["chat_template_kwargs"] = {
                     "enable_thinking": thinking != "disabled"
                 }
@@ -201,6 +213,8 @@ class ChatClient:
                 timeout_sec=limit,
                 input_reserve=reservation,
                 output_allowance=allowance,
+                thinking=payload.get("thinking"),
+                chat_template_kwargs=payload.get("chat_template_kwargs"),
             )
             start = time.monotonic()
             reply = self._exchange(
@@ -266,3 +280,4 @@ class ChatClient:
             self._event("request_retry", delay_sec=delay, next_attempt=attempt + 2)
             time.sleep(delay)
         raise ModelError("Model retries exhausted")
+
